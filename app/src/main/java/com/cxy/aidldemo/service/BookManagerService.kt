@@ -2,7 +2,9 @@ package com.cxy.aidldemo.service
 
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.RemoteCallbackList
 import android.util.Log
 import com.cxy.aidldemo.aidl.Book
 import com.cxy.aidldemo.aidl.IBookManager
@@ -15,28 +17,35 @@ class BookManagerService : Service() {
     //A thread-safe variant of {@link java.util.ArrayList} in which all mutative operations
     // service is runned in binder pool and has to support multi client requests.
     private val mBookList = CopyOnWriteArrayList<Book>()
-    private val mListenerList = CopyOnWriteArrayList<IOnNewBookArrivedListener>()
+    // 对象是不能跨进程的，对角的跨进程传输是通过序列化读写来重写生成在对象，所以是不同的对象。
+    // 当通过客户端 unregister service listener时，要通过底层的共通binder对象来实现
+    // 具体是通过RemoteCallbackList(内部自动实现了线程同步功能)
+    //private val mListenerList = CopyOnWriteArrayList<IOnNewBookArrivedListener>()
+    private val mListenerList = RemoteCallbackList<IOnNewBookArrivedListener>()
     private var mIsServiceDestoryed = AtomicBoolean(false)
 
     private val mBinder = object : IBookManager.Stub() {
         override fun registerListener(listener: IOnNewBookArrivedListener?) {
-            if (!mListenerList.contains(listener)) {
-                mListenerList.add(listener)
-            } else {
-                Log.d(TAG, "already exists.")
-            }
+//            if (!mListenerList.contains(listener)) {
+//                mListenerList.add(listener)
+//            } else {
+//                Log.i(TAG, "already exists.")
+//            }
+            mListenerList.register(listener)
         }
 
         override fun unregisterListener(listener: IOnNewBookArrivedListener?) {
-            if (mListenerList.contains(listener)) {
-                mListenerList.remove(listener)
-                Log.d(TAG, "unregister listener succeed.")
+//            if (mListenerList.contains(listener)) {
+//                mListenerList.remove(listener)
+//                Log.i(TAG, "unregister listener succeed.")
+//
+//            } else {
+//                Log.i(TAG, "not found, can not unregister.")
+//            }
+//            Log.i(TAG, "unregisterListener, current size: ${mListenerList.size}")
 
-            } else {
-                Log.d(TAG, "not found, can not unregister.")
-            }
-
-            Log.d(TAG, "unregisterListener, current size: ${mListenerList.size}")
+            mListenerList.unregister(listener)
+            Log.i(TAG, "unregisterListener, current size: ${mListenerList.beginBroadcast()}")
         }
 
         override fun getBookList(): MutableList<Book> {
@@ -52,10 +61,17 @@ class BookManagerService : Service() {
         super.onCreate()
         mBookList.add(Book(1, "Android 开发艺术探索"))
         mBookList.add(Book(2, "headfirst"))
+        Thread(ServiceWorker()).start()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        return mBinder;
+        val check =
+            checkCallingOrSelfPermission("com.cxy.aidldemo.aidl.permission.ACCESS_BOOK_SERVICE")
+        if (check == PackageManager.PERMISSION_DENIED) {
+            return null
+        }
+        Log.i(TAG, "permission is authenticated")
+        return mBinder
     }
 
     override fun onDestroy() {
@@ -82,11 +98,16 @@ class BookManagerService : Service() {
 
     private fun onNewBookArrived(book: Book) {
         mBookList.add(book)
-        Log.d(TAG, "onNewBookArrived, notify listeners:${mListenerList.size}")
-        for (i in 0..mListenerList.size) {
-            Log.d(TAG, "onNewBookArrived, notify listener: ${mListenerList[i]}")
-            mListenerList[i].onNewBookArrived(book)
+//        Log.i(TAG, "onNewBookArrived, notify listeners:${mListenerList.size}")
+//        for (i in 0 until mListenerList.size) {
+//            Log.i(TAG, "onNewBookArrived, notify listener: ${mListenerList[i]}")
+//            mListenerList[i].onNewBookArrived(book)
+//        }
+        for (i in 0 until mListenerList.beginBroadcast()) {
+            mListenerList.getBroadcastItem(i).onNewBookArrived(book)
         }
+
+        mListenerList.finishBroadcast()
     }
 
 }

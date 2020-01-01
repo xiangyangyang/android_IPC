@@ -22,12 +22,13 @@ class BookManagerActivity : AppCompatActivity() {
     private lateinit var mIOnNewBookArrivedListener: IOnNewBookArrivedListener
     private val mConnection = object : ServiceConnection {
         override fun onServiceDisconnected(name: ComponentName?) {
-            TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
         }
 
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             mRemoteBookManager = IBookManager.Stub.asInterface(service)
             try {
+                // 被调用的方法运行在服务端的binder线程池中，结果返回前线程会被挂起，
+                // 所以执行耗时操作时，开启新线程.在服务端调用客户端方法时也同理
                 val list = mRemoteBookManager.bookList;
                 Log.i(TAG, "query book list, list type: ${list.javaClass.canonicalName}")
                 Log.i(TAG, "query book list: ${list.toString()}")
@@ -66,7 +67,7 @@ class BookManagerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         if (mRemoteBookManager?.asBinder().isBinderAlive) {
-            Log.d(TAG, "unregister listener: $mIOnNewBookArrivedListener")
+            Log.i(TAG, "unregister listener: $mIOnNewBookArrivedListener")
             mRemoteBookManager.unregisterListener(mIOnNewBookArrivedListener)
         }
         unbindService(mConnection)
@@ -76,7 +77,7 @@ class BookManagerActivity : AppCompatActivity() {
     class MyHandler(private val outerClass: WeakReference<BookManagerActivity>) : Handler() {
         override fun handleMessage(msg: Message) {
             when (msg.what) {
-                outerClass.get()!!.MESSAGE_NEW_BOOK_ARRIVED -> Log.d(
+                outerClass.get()!!.MESSAGE_NEW_BOOK_ARRIVED -> Log.i(
                     outerClass.get()!!.TAG,
                     "receive new book: ${msg.obj}"
                 )
